@@ -59,6 +59,7 @@ def run_evaluation():
 		alignment = sfm_dirname + scene + '_trans.txt'
 		gt_filen = DATASET_DIR + scene + '/' + scene + '.ply'
 		cropfile = DATASET_DIR + scene + '/' + scene + '.json'
+		final_transform_file = sfm_dirname + scene + '_final_transform.npy'
 		mvs_outpath = DATASET_DIR + scene + '/evaluation/'
 		make_dir(mvs_outpath)
 
@@ -77,31 +78,37 @@ def run_evaluation():
 		print(gt_filen)
 		gt_pcd = read_point_cloud(gt_filen)
 
-		gt_trans = np.loadtxt(alignment)
-		traj_to_register = read_trajectory(new_logfile)
-		gt_traj_col = read_trajectory(colmap_ref_logfile)
-
-		trajectory_transform = trajectory_alignment(
-				traj_to_register, gt_traj_col, gt_trans, scene)
-
 		# Refine alignment by using the actual GT and MVS pointclouds
 		vol = read_selection_polygon_volume(cropfile)
+
 		# big pointclouds will be downlsampled to this number to speed up alignment
 		dist_threshold = dTau
 
-		# Registration refinment in 3 iterations
-		r2  = registration_vol_ds(pcd, gt_pcd,
-				trajectory_transform, vol, dTau, dTau*80, 20)
-		r3  = registration_vol_ds(pcd, gt_pcd,
-				r2.transformation, vol, dTau/2.0, dTau*20, 20)
-		r  = registration_unif(pcd, gt_pcd,
-				r3.transformation, vol, 2*dTau, 20)
+		if os.path.isfile(final_transform_file):
+			# Load existing transform
+			final_transform = np.load(final_transform_file)
+		else:
+			# Compute transform
+			gt_trans = np.loadtxt(alignment)
+			traj_to_register = read_trajectory(new_logfile)
+			gt_traj_col = read_trajectory(colmap_ref_logfile)
+			trajectory_transform = trajectory_alignment(traj_to_register, gt_traj_col, gt_trans, scene)
+			# Registration refinment in 3 iterations
+			r2  = registration_vol_ds(pcd, gt_pcd,
+					trajectory_transform, vol, dTau, dTau*80, 20)
+			r3  = registration_vol_ds(pcd, gt_pcd,
+					r2.transformation, vol, dTau/2.0, dTau*20, 20)
+			r  = registration_unif(pcd, gt_pcd,
+					r3.transformation, vol, 2*dTau, 20)
+			final_transform = r.transformation
+			# Save transform
+			np.save(final_transform_file, final_transform)
 
 		# Histogramms and P/R/F1
 		plot_stretch = 5
 		[precision, recall, fscore, edges_source, cum_source,
 				edges_target, cum_target] = EvaluateHisto(
-				pcd, gt_pcd, r.transformation, vol, dTau/2.0, dTau,
+				pcd, gt_pcd, final_transform, vol, dTau/2.0, dTau,
 				mvs_outpath, plot_stretch, scene)
 		eva = [precision, recall, fscore]
 		print("==============================")
