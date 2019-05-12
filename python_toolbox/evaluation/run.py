@@ -35,6 +35,7 @@
 
 # this script requires Open3D python binding
 # please follow the intructions in setup.py before running this script.
+import sys
 import numpy as np
 
 from setup import *
@@ -43,86 +44,93 @@ from evaluation import *
 from util import *
 from plot import *
 
-def run_evaluation():
-	for scene in scenes_tau_dict:
-		print("")
-		print("===========================")
-		print("Evaluating %s" % scene)
-		print("===========================")
+def run_evaluation(scene):
+	print("")
+	print("===========================")
+	print("Evaluating %s" % scene)
+	print("===========================")
 
-		dTau = scenes_tau_dict[scene]
-		# put the crop-file, the GT file, the COLMAP SfM log file and
-		# the alignment of the according scene in a folder of
-		# the same scene name in the DATASET_DIR
-		sfm_dirname = DATASET_DIR + scene + "/"
-		colmap_ref_logfile = sfm_dirname + scene + '_COLMAP_SfM.log'
-		alignment = sfm_dirname + scene + '_trans.txt'
-		gt_filen = DATASET_DIR + scene + '/' + scene + '.ply'
-		cropfile = DATASET_DIR + scene + '/' + scene + '.json'
-		final_transform_file = sfm_dirname + scene + '_final_transform.npy'
-		mvs_outpath = DATASET_DIR + scene + '/evaluation/'
-		make_dir(mvs_outpath)
+	dTau = scenes_tau_dict[scene]
+	# put the crop-file, the GT file, the COLMAP SfM log file and
+	# the alignment of the according scene in a folder of
+	# the same scene name in the DATASET_DIR
+	sfm_dirname = DATASET_DIR + scene + "/"
+	colmap_ref_logfile = sfm_dirname + scene + '_COLMAP_SfM.log'
+	alignment = sfm_dirname + scene + '_trans.txt'
+	gt_filen = DATASET_DIR + scene + '/' + scene + '.ply'
+	cropfile = DATASET_DIR + scene + '/' + scene + '.json'
+	final_transform_file = sfm_dirname + scene + '_final_transform.npy'
+	mvs_outpath = DATASET_DIR + scene + '/evaluation/'
+	make_dir(mvs_outpath)
 
-		###############################################################
-		# User input files:
-		# SfM log file and pointcoud of your reconstruction comes here.
-		# as an example the COLMAP data will be used, but the script
-		# should work with any other method as well
-		###############################################################
-		new_logfile = sfm_dirname + scene + MY_LOG_POSTFIX
-		mvs_file = DATASET_DIR + scene + '/' + scene + MY_RECONSTRUCTION_POSTFIX
+	###############################################################
+	# User input files:
+	# SfM log file and pointcoud of your reconstruction comes here.
+	# as an example the COLMAP data will be used, but the script
+	# should work with any other method as well
+	###############################################################
+	new_logfile = sfm_dirname + scene + MY_LOG_POSTFIX
+	mvs_file = DATASET_DIR + scene + '/' + scene + MY_RECONSTRUCTION_POSTFIX
 
-		#Load reconstruction and according GT
-		print(mvs_file)
-		pcd = read_point_cloud(mvs_file)
-		print(gt_filen)
-		gt_pcd = read_point_cloud(gt_filen)
+	#Load reconstruction and according GT
+	print(mvs_file)
+	pcd = read_point_cloud(mvs_file)
+	print(gt_filen)
+	gt_pcd = read_point_cloud(gt_filen)
 
-		# Refine alignment by using the actual GT and MVS pointclouds
-		vol = read_selection_polygon_volume(cropfile)
+	# Refine alignment by using the actual GT and MVS pointclouds
+	vol = read_selection_polygon_volume(cropfile)
 
-		# big pointclouds will be downlsampled to this number to speed up alignment
-		dist_threshold = dTau
+	# big pointclouds will be downlsampled to this number to speed up alignment
+	dist_threshold = dTau
 
-		if os.path.isfile(final_transform_file):
-			# Load existing transform
-			final_transform = np.load(final_transform_file)
-		else:
-			# Compute transform
-			gt_trans = np.loadtxt(alignment)
-			traj_to_register = read_trajectory(new_logfile)
-			gt_traj_col = read_trajectory(colmap_ref_logfile)
-			trajectory_transform = trajectory_alignment(traj_to_register, gt_traj_col, gt_trans, scene)
-			# Registration refinment in 3 iterations
-			r2  = registration_vol_ds(pcd, gt_pcd,
-					trajectory_transform, vol, dTau, dTau*80, 20)
-			r3  = registration_vol_ds(pcd, gt_pcd,
-					r2.transformation, vol, dTau/2.0, dTau*20, 20)
-			r  = registration_unif(pcd, gt_pcd,
-					r3.transformation, vol, 2*dTau, 20)
-			final_transform = r.transformation
-			# Save transform
-			np.save(final_transform_file, final_transform)
+	if os.path.isfile(final_transform_file):
+		# Load existing transform
+		final_transform = np.load(final_transform_file)
+	else:
+		# Compute transform
+		gt_trans = np.loadtxt(alignment)
+		traj_to_register = read_trajectory(new_logfile)
+		gt_traj_col = read_trajectory(colmap_ref_logfile)
+		trajectory_transform = trajectory_alignment(traj_to_register, gt_traj_col, gt_trans, scene)
+		# Registration refinment in 3 iterations
+		r2  = registration_vol_ds(pcd, gt_pcd,
+				trajectory_transform, vol, dTau, dTau*80, 20)
+		r3  = registration_vol_ds(pcd, gt_pcd,
+				r2.transformation, vol, dTau/2.0, dTau*20, 20)
+		r  = registration_unif(pcd, gt_pcd,
+				r3.transformation, vol, 2*dTau, 20)
+		final_transform = r.transformation
+		# Save transform
+		np.save(final_transform_file, final_transform)
 
-		# Histogramms and P/R/F1
-		plot_stretch = 5
-		[precision, recall, fscore, edges_source, cum_source,
-				edges_target, cum_target] = EvaluateHisto(
-				pcd, gt_pcd, final_transform, vol, dTau/2.0, dTau,
-				mvs_outpath, plot_stretch, scene)
-		eva = [precision, recall, fscore]
-		print("==============================")
-		print("evaluation result : %s" % scene)
-		print("==============================")
-		print("distance tau : %.3f" % dTau)
-		print("precision : %.4f" % eva[0])
-		print("recall : %.4f" % eva[1])
-		print("f-score : %.4f" % eva[2])
-		print("==============================")
+	# Histogramms and P/R/F1
+	plot_stretch = 5
+	[precision, recall, fscore, edges_source, cum_source,
+			edges_target, cum_target] = EvaluateHisto(
+			pcd, gt_pcd, final_transform, vol, dTau/2.0, dTau,
+			mvs_outpath, plot_stretch, scene)
+	eva = [precision, recall, fscore]
+	print("==============================")
+	print("evaluation result : %s" % scene)
+	print("==============================")
+	print("distance tau : %.3f" % dTau)
+	print("precision : %.4f" % eva[0])
+	print("recall : %.4f" % eva[1])
+	print("f-score : %.4f" % eva[2])
+	print("==============================")
 
-		# Plotting
-		plot_graph(scene, fscore, dist_threshold, edges_source, cum_source,
-				edges_target, cum_target, plot_stretch, mvs_outpath)
+	# Plotting
+	plot_graph(scene, fscore, dist_threshold, edges_source, cum_source,
+			edges_target, cum_target, plot_stretch, mvs_outpath)
 
 if __name__ == "__main__":
-	run_evaluation()
+	if len(sys.argv) > 1:
+		name = sys.argv[1]
+	else:
+		name = 'All'
+	if name == 'All':
+		for scene in scenes_tau_dict:
+			run_evaluation(scene)
+	else:
+		run_evaluation(name)
