@@ -126,7 +126,7 @@ def run_evaluation(dataset_dir, traj_path, ply_path, out_dir):
     ] = EvaluateHisto(
         pcd,
         gt_pcd,
-        r.transformation,
+        final_transform,
         vol,
         dTau / 2.0,
         dTau,
