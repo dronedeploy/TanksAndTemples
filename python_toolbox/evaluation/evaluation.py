@@ -82,6 +82,19 @@ def EvaluateHisto(
     t = crop_volume.crop_point_cloud(t)
     t = t.voxel_down_sample(voxel_size)
     t.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(knn=20))
+
+    return EvaluateHistoAligned(s, t, threshold, filename_mvs, plot_stretch, scene_name, verbose)
+
+
+def EvaluateHistoAligned(
+    s,
+    t,
+    threshold,
+    filename_mvs,
+    plot_stretch,
+    scene_name,
+    verbose=True,
+):
     print("[compute_point_cloud_to_point_cloud_distance]")
     distance1 = s.compute_point_cloud_distance(t)
     print("[compute_point_cloud_to_point_cloud_distance]")

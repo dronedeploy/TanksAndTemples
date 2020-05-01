@@ -49,6 +49,7 @@ from registration import (
     read_trajectory,
 )
 from evaluation import EvaluateHisto
+from evaluation import EvaluateHistoAligned
 from util import make_dir
 from plot import plot_graph
 
@@ -76,6 +77,9 @@ def run_evaluation(dataset_dir, traj_path, ply_path, out_dir):
     map_file = os.path.join(dataset_dir, scene + "_mapping_reference.txt")
     final_transform_file = os.path.join(dataset_dir, scene + '_final_transform.npy')
 
+    traj_path = os.path.join(dataset_dir, traj_path)
+    ply_path = os.path.join(dataset_dir, ply_path)
+    out_dir = os.path.join(dataset_dir, out_dir)
     make_dir(out_dir)
 
     # Load reconstruction and according GT
@@ -158,6 +162,68 @@ def run_evaluation(dataset_dir, traj_path, ply_path, out_dir):
     )
 
 
+
+def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir):
+    scene = os.path.basename(os.path.normpath(dataset_dir))
+
+    print("")
+    print("===========================")
+    print("Evaluating %s" % scene)
+    print("===========================")
+
+    gt_ply_path = os.path.join(dataset_dir, gt_ply_path)
+    ply_path = os.path.join(dataset_dir, ply_path)
+    out_dir = os.path.join(dataset_dir, out_dir)
+    make_dir(out_dir)
+
+    # Load reconstruction and according GT
+    print(ply_path)
+    pcd = o3d.io.read_point_cloud(ply_path)
+    print(gt_ply_path)
+    gt_pcd = o3d.io.read_point_cloud(gt_ply_path)
+
+    # Histogramms and P/R/F1
+    plot_stretch = 5
+    [
+        precision,
+        recall,
+        fscore,
+        edges_source,
+        cum_source,
+        edges_target,
+        cum_target,
+    ] = EvaluateHistoAligned(
+        pcd,
+        gt_pcd,
+        dTau,
+        out_dir,
+        plot_stretch,
+        scene,
+    )
+    eva = [precision, recall, fscore]
+    print("==============================")
+    print("evaluation result : %s" % scene)
+    print("==============================")
+    print("distance tau : %.3f" % dTau)
+    print("precision : %.4f" % eva[0])
+    print("recall : %.4f" % eva[1])
+    print("f-score : %.4f" % eva[2])
+    print("==============================")
+
+    # Plotting
+    plot_graph(
+        scene,
+        fscore,
+        dTau,
+        edges_source,
+        cum_source,
+        edges_target,
+        cum_target,
+        plot_stretch,
+        out_dir,
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -169,7 +235,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--traj-path",
         type=str,
-        required=True,
         help="path to trajectory file. See `convert_to_logfile.py` to create this file.",
     )
     parser.add_argument(
@@ -181,19 +246,38 @@ if __name__ == "__main__":
     parser.add_argument(
         "--out-dir",
         type=str,
-        default="",
+        default="evaluation",
         help="output directory, default: an evaluation directory is created in the directory of the ply file",
     )
+
+    parser.add_argument(
+        "--gt-ply-path",
+        type=str,
+        help="path to ground-truth ply file",
+    )
+    parser.add_argument(
+        "--tau",
+        type=float,
+        default="0.02",
+        help="precision threshold",
+    )
+    
     args = parser.parse_args()
 
-    if args.out_dir.strip() == "":
-        args.out_dir = os.path.join(
-            os.path.dirname(args.ply_path), "evaluation"
+    if args.gt_ply_path == None:
+        # run normal T&T evaluation
+        run_evaluation(
+            dataset_dir=args.dataset_dir,
+            traj_path=args.traj_path,
+            ply_path=args.ply_path,
+            out_dir=args.out_dir,
         )
-
-    run_evaluation(
-        dataset_dir=args.dataset_dir,
-        traj_path=args.traj_path,
-        ply_path=args.ply_path,
-        out_dir=args.out_dir,
-    )
+    else:
+        # run evaluation on already aligned data
+        run_evaluation_aligned(
+            dataset_dir=args.dataset_dir,
+            gt_ply_path=args.gt_ply_path,
+            ply_path=args.ply_path,
+            dTau=args.tau,
+            out_dir=args.out_dir,
+        )
