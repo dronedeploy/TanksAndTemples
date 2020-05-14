@@ -39,7 +39,10 @@ import sys
 import numpy as np
 import open3d as o3d
 import os
+import glob
 import argparse
+from read_pcd import read_pcd
+
 
 from config import scenes_tau_dict
 from registration import (
@@ -54,8 +57,9 @@ from util import make_dir
 from plot import plot_graph
 
 
-def run_evaluation(dataset_dir, traj_path, ply_path, out_dir):
-    scene = os.path.basename(os.path.normpath(dataset_dir))
+def run_evaluation(dataset_dir, traj_path, ply_path, out_dir, plot_color_coding=True):
+    dataset_dir = os.path.normpath(dataset_dir)
+    scene = os.path.basename(dataset_dir)
 
     if scene not in scenes_tau_dict:
         print(dataset_dir, scene)
@@ -136,6 +140,7 @@ def run_evaluation(dataset_dir, traj_path, ply_path, out_dir):
         dTau,
         out_dir,
         plot_stretch,
+        plot_color_coding,
         scene,
     )
     eva = [precision, recall, fscore]
@@ -162,9 +167,12 @@ def run_evaluation(dataset_dir, traj_path, ply_path, out_dir):
     )
 
 
-
-def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir):
-    scene = os.path.basename(os.path.normpath(dataset_dir))
+def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir, postfix=None, transform_path=None, refine_alignment=False, plot_color_coding=True):
+    dataset_dir = os.path.normpath(dataset_dir)
+    scene = os.path.basename(dataset_dir)
+    if postfix != None:
+        out_dir = os.path.join(out_dir, scene)
+        scene = str(postfix)
 
     print("")
     print("===========================")
@@ -178,9 +186,22 @@ def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir):
 
     # Load reconstruction and according GT
     print(ply_path)
-    pcd = o3d.io.read_point_cloud(ply_path)
+    pcd = read_pcd(ply_path)
     print(gt_ply_path)
-    gt_pcd = o3d.io.read_point_cloud(gt_ply_path)
+    gt_pcd = read_pcd(gt_ply_path)
+
+    if transform_path != None:
+		# Load and apply existing transform
+        transform = np.load(transform_path)
+        if refine_alignment:
+            # Refine existing transform
+            pcd = refine_alignment(pcd, gt_pcd, dTau, transform)
+        else:
+            pcd.transform(transform)
+    elif refine_alignment:
+        # Refine alignment
+        r = registration_unif(pcd, gt_pcd, np.identity(4), None, dTau * 2, 20, sample_method=None)
+        pcd.transform(r.transformation)
 
     # Histogramms and P/R/F1
     plot_stretch = 5
@@ -198,6 +219,7 @@ def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir):
         dTau,
         out_dir,
         plot_stretch,
+        plot_color_coding,
         scene,
     )
     eva = [precision, recall, fscore]
@@ -222,6 +244,43 @@ def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir):
         plot_stretch,
         out_dir,
     )
+
+    return eva
+
+
+def run_evaluation_aligned_project(dataset_dir, gt_ply_path, ply_path, dTau, out_dir, transform_path=None, refine_alignment=False, plot_color_coding=True):
+    dataset_dir = os.path.normpath(dataset_dir)
+    scene = os.path.basename(dataset_dir)
+    gt_ply_path = os.path.join(dataset_dir, gt_ply_path)
+    ply_path = os.path.join(dataset_dir, ply_path)
+    out_dir = os.path.join(dataset_dir, out_dir)
+
+    gt_scenes = [f for f in glob.glob(gt_ply_path)]
+    scenes = [f for f in glob.glob(ply_path)]
+    if len(gt_scenes) != len(scenes):
+        print("error: invalid project")
+        return
+
+    if len(gt_scenes) == 1:
+        return run_evaluation_aligned(dataset_dir, gt_scenes[i], scenes[i], dTau, out_dir, transform_path=transform_path, refine_alignment=refine_alignment, plot_color_coding=plot_color_coding)
+    evas = []
+    for i in range(len(gt_scenes)):
+        evas.append(run_evaluation_aligned(dataset_dir, gt_scenes[i], scenes[i], dTau, out_dir, postfix=i, transform_path=transform_path, refine_alignment=refine_alignment, plot_color_coding=plot_color_coding))
+    nevas = len(evas)
+    evas = np.asmatrix(evas)
+    eva = np.asarray(evas.sum(axis=0)/nevas)
+    np.savetxt(os.path.join(out_dir, scene + ".average.txt"), eva.T)
+    eva = np.squeeze(eva)
+    print("")
+    print("==============================")
+    print("evaluation average result : %s" % scene)
+    print("==============================")
+    print("distance tau : %.3f" % dTau)
+    print("precision : %.4f" % eva[0])
+    print("recall : %.4f" % eva[1])
+    print("f-score : %.4f" % eva[2])
+    print("==============================")
+    return eva
 
 
 if __name__ == "__main__":
@@ -261,6 +320,24 @@ if __name__ == "__main__":
         default="0.02",
         help="precision threshold",
     )
+    parser.add_argument(
+        "--refine-alignment",
+        type=bool,
+        default=False,
+        help="refine alignment",
+    )
+    parser.add_argument(
+        "--transform-path",
+        type=str,
+        default=None,
+        help="transform from plt to gt-ply to be used",
+    )
+    parser.add_argument(
+        "--no-plot-color-coding",
+        type=bool,
+        default=False,
+        help="plot color coding",
+    )
     
     args = parser.parse_args()
 
@@ -271,13 +348,17 @@ if __name__ == "__main__":
             traj_path=args.traj_path,
             ply_path=args.ply_path,
             out_dir=args.out_dir,
+            plot_color_coding=not args.no_plot_color_coding
         )
     else:
         # run evaluation on already aligned data
-        run_evaluation_aligned(
+        run_evaluation_aligned_project(
             dataset_dir=args.dataset_dir,
             gt_ply_path=args.gt_ply_path,
             ply_path=args.ply_path,
             dTau=args.tau,
             out_dir=args.out_dir,
+            transform_path=args.transform_path,
+            refine_alignment=args.refine_alignment,
+            plot_color_coding=not args.no_plot_color_coding
         )

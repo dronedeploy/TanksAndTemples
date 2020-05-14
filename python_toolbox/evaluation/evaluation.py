@@ -66,6 +66,7 @@ def EvaluateHisto(
     threshold,
     filename_mvs,
     plot_stretch,
+    plot_color_coding,
     scene_name,
     verbose=True,
 ):
@@ -83,7 +84,7 @@ def EvaluateHisto(
     t = t.voxel_down_sample(voxel_size)
     t.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(knn=20))
 
-    return EvaluateHistoAligned(s, t, threshold, filename_mvs, plot_stretch, scene_name, verbose)
+    return EvaluateHistoAligned(s, t, threshold, filename_mvs, plot_stretch, plot_color_coding, scene_name, verbose)
 
 
 def EvaluateHistoAligned(
@@ -92,6 +93,7 @@ def EvaluateHistoAligned(
     threshold,
     filename_mvs,
     plot_stretch,
+    plot_color_coding,
     scene_name,
     verbose=True,
 ):
@@ -100,49 +102,50 @@ def EvaluateHistoAligned(
     print("[compute_point_cloud_to_point_cloud_distance]")
     distance2 = t.compute_point_cloud_distance(s)
 
-    # write the distances to bin files
-    # np.array(distance1).astype("float64").tofile(
-    #     filename_mvs + "/" + scene_name + ".precision.bin"
-    # )
-    # np.array(distance2).astype("float64").tofile(
-    #     filename_mvs + "/" + scene_name + ".recall.bin"
-    # )
+    if plot_color_coding:
+        # write the distances to bin files
+        # np.array(distance1).astype("float64").tofile(
+        #     filename_mvs + "/" + scene_name + ".precision.bin"
+        # )
+        # np.array(distance2).astype("float64").tofile(
+        #     filename_mvs + "/" + scene_name + ".recall.bin"
+        # )
 
-    # Colorize the poincloud files prith the precision and recall values
-    # o3d.io.write_point_cloud(
-    #     filename_mvs + "/" + scene_name + ".precision.ply", s
-    # )
-    # o3d.io.write_point_cloud(
-    #     filename_mvs + "/" + scene_name + ".precision.ncb.ply", s
-    # )
-    # o3d.io.write_point_cloud(filename_mvs + "/" + scene_name + ".recall.ply", t)
+        # Colorize the poincloud files prith the precision and recall values
+        # o3d.io.write_point_cloud(
+        #     filename_mvs + "/" + scene_name + ".precision.ply", s
+        # )
+        # o3d.io.write_point_cloud(
+        #     filename_mvs + "/" + scene_name + ".precision.ncb.ply", s
+        # )
+        # o3d.io.write_point_cloud(filename_mvs + "/" + scene_name + ".recall.ply", t)
 
-    source_n_fn = filename_mvs + "/" + scene_name + ".precision.ply"
-    target_n_fn = filename_mvs + "/" + scene_name + ".recall.ply"
+        source_n_fn = os.path.join(filename_mvs, scene_name + ".precision.ply")
+        target_n_fn = os.path.join(filename_mvs, scene_name + ".recall.ply")
 
-    print("[ViewDistances] Add color coding to visualize error")
-    # eval_str_viewDT = (
-    #     OPEN3D_EXPERIMENTAL_BIN_PATH
-    #     + "ViewDistances "
-    #     + source_n_fn
-    #     + " --max_distance "
-    #     + str(threshold * 3)
-    #     + " --write_color_back --without_gui"
-    # )
-    # os.system(eval_str_viewDT)
-    write_color_distances(source_n_fn, s, distance1, 3 * threshold)
+        print("[ViewDistances] Add color coding to visualize error")
+        # eval_str_viewDT = (
+        #     OPEN3D_EXPERIMENTAL_BIN_PATH
+        #     + "ViewDistances "
+        #     + source_n_fn
+        #     + " --max_distance "
+        #     + str(threshold * 3)
+        #     + " --write_color_back --without_gui"
+        # )
+        # os.system(eval_str_viewDT)
+        write_color_distances(source_n_fn, s, distance1, 3 * threshold)
 
-    print("[ViewDistances] Add color coding to visualize error")
-    # eval_str_viewDT = (
-    #     OPEN3D_EXPERIMENTAL_BIN_PATH
-    #     + "ViewDistances "
-    #     + target_n_fn
-    #     + " --max_distance "
-    #     + str(threshold * 3)
-    #     + " --write_color_back --without_gui"
-    # )
-    # os.system(eval_str_viewDT)
-    write_color_distances(target_n_fn, t, distance2, 3 * threshold)
+        print("[ViewDistances] Add color coding to visualize error")
+        # eval_str_viewDT = (
+        #     OPEN3D_EXPERIMENTAL_BIN_PATH
+        #     + "ViewDistances "
+        #     + target_n_fn
+        #     + " --max_distance "
+        #     + str(threshold * 3)
+        #     + " --write_color_back --without_gui"
+        # )
+        # os.system(eval_str_viewDT)
+        write_color_distances(target_n_fn, t, distance2, 3 * threshold)
 
     # get histogram and f-score
     [
@@ -156,10 +159,10 @@ def EvaluateHistoAligned(
     ] = get_f1_score_histo2(
         threshold, filename_mvs, plot_stretch, distance1, distance2
     )
-    np.savetxt(filename_mvs + "/" + scene_name + ".recall.txt", cum_target)
-    np.savetxt(filename_mvs + "/" + scene_name + ".precision.txt", cum_source)
+    np.savetxt(os.path.join(filename_mvs, scene_name + ".recall.txt"), cum_target)
+    np.savetxt(os.path.join(filename_mvs, scene_name + ".precision.txt"), cum_source)
     np.savetxt(
-        filename_mvs + "/" + scene_name + ".prf_tau_plotstr.txt",
+        os.path.join(filename_mvs, scene_name + ".prf_tau_plotstr.txt"),
         np.array([precision, recall, fscore, threshold, plot_stretch]),
     )
 

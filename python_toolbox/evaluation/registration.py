@@ -116,16 +116,16 @@ def crop_and_downsample(
 ):
     pcd_copy = copy.deepcopy(pcd)
     pcd_copy.transform(trans)
-    pcd_crop = crop_volume.crop_point_cloud(pcd_copy)
+    if crop_volume != None:
+        pcd_copy = crop_volume.crop_point_cloud(pcd_copy)
     if down_sample_method == "voxel":
-        # return voxel_down_sample(pcd_crop, voxel_size)
-        return pcd_crop.voxel_down_sample(voxel_size)
+        return pcd_copy.voxel_down_sample(voxel_size)
     elif down_sample_method == "uniform":
-        n_points = len(pcd_crop.points)
+        n_points = len(pcd_copy.points)
         if n_points > MAX_POINT_NUMBER:
             ds_rate = int(round(n_points / float(MAX_POINT_NUMBER)))
-            return pcd_crop.uniform_down_sample(ds_rate)
-    return pcd_crop
+            return pcd_copy.uniform_down_sample(ds_rate)
+    return pcd_copy
 
 
 def registration_unif(
@@ -135,17 +135,17 @@ def registration_unif(
     crop_volume,
     threshold,
     max_itr,
-    max_size=4 * MAX_POINT_NUMBER,
+    sample_method="uniform",
     verbose=True,
 ):
     if verbose:
         print("[Registration] threshold: %f" % threshold)
         o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Debug)
     s = crop_and_downsample(
-        source, crop_volume, down_sample_method="uniform", trans=init_trans
+        source, crop_volume, down_sample_method=sample_method, trans=init_trans
     )
     t = crop_and_downsample(
-        gt_target, crop_volume, down_sample_method="uniform"
+        gt_target, crop_volume, down_sample_method=sample_method
     )
     reg = o3d.registration.registration_icp(
         s,
