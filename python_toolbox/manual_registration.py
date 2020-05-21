@@ -40,18 +40,20 @@ def manual_registration(pcd1_file, pcd2_file, threshold, transform_file=None, ou
     draw_registration_result(source, target, np.identity(4))
 
     # pick points from two point clouds and builds correspondences
+    trans_init = np.identity(4)
     picked_id_source = pick_points(source)
-    picked_id_target = pick_points(target)
-    assert (len(picked_id_source) >= 3 and len(picked_id_target) >= 3)
-    assert (len(picked_id_source) == len(picked_id_target))
-    corr = np.zeros((len(picked_id_source), 2))
-    corr[:, 0] = picked_id_source
-    corr[:, 1] = picked_id_target
+    if len(picked_id_source) > 0:
+        picked_id_target = pick_points(target)
+        assert (len(picked_id_source) >= 3 and len(picked_id_target) >= 3)
+        assert (len(picked_id_source) == len(picked_id_target))
+        corr = np.zeros((len(picked_id_source), 2))
+        corr[:, 0] = picked_id_source
+        corr[:, 1] = picked_id_target
 
-    # estimate rough transformation using correspondences
-    print("Compute a rough transform using the correspondences given by user")
-    p2p = o3d.registration.TransformationEstimationPointToPoint(True)
-    trans_init = p2p.compute_transformation(source, target, o3d.utility.Vector2iVector(corr))
+        # estimate rough transformation using correspondences
+        print("Compute a rough transform using the correspondences given by user")
+        p2p = o3d.registration.TransformationEstimationPointToPoint(True)
+        trans_init = p2p.compute_transformation(source, target, o3d.utility.Vector2iVector(corr))
 
     # point-to-point ICP for refinement
     print("Perform point-to-point ICP refinement")

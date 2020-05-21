@@ -56,8 +56,24 @@ from evaluation import EvaluateHistoAligned
 from util import make_dir
 from plot import plot_graph
 
+from threading import Thread
 
-def run_evaluation(dataset_dir, traj_path, ply_path, out_dir, plot_color_coding=True):
+class ThreadWithReturnValue(Thread):
+    def __init__(self, group=None, target=None, name=None,
+                 args=(), kwargs={}, Verbose=None):
+        Thread.__init__(self, group, target, name, args, kwargs)
+        self._return = None
+    def run(self):
+        print(type(self._target))
+        if self._target is not None:
+            self._return = self._target(*self._args,
+                                                **self._kwargs)
+    def join(self, *args):
+        Thread.join(self, *args)
+        return self._return
+
+
+def run_evaluation(dataset_dir, traj_path, ply_path, out_dir, do_plot_color_coding=True):
     dataset_dir = os.path.normpath(dataset_dir)
     scene = os.path.basename(dataset_dir)
 
@@ -140,7 +156,7 @@ def run_evaluation(dataset_dir, traj_path, ply_path, out_dir, plot_color_coding=
         dTau,
         out_dir,
         plot_stretch,
-        plot_color_coding,
+        do_plot_color_coding,
         scene,
     )
     eva = [precision, recall, fscore]
@@ -167,7 +183,7 @@ def run_evaluation(dataset_dir, traj_path, ply_path, out_dir, plot_color_coding=
     )
 
 
-def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir, postfix=None, transform_path=None, refine_alignment=False, plot_color_coding=True):
+def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir, postfix=None, transform_path=None, crop_path=None, do_refine_alignment=False, do_plot_color_coding=True):
     dataset_dir = os.path.normpath(dataset_dir)
     scene = os.path.basename(dataset_dir)
     if postfix != None:
@@ -185,23 +201,40 @@ def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir, po
     make_dir(out_dir)
 
     # Load reconstruction and according GT
-    print(ply_path)
-    pcd = read_pcd(ply_path)
-    print(gt_ply_path)
-    gt_pcd = read_pcd(gt_ply_path)
+    if True:
+        print(ply_path)
+        pcd = read_pcd(ply_path)
+        print(gt_ply_path)
+        gt_pcd = read_pcd(gt_ply_path)
+    else:
+        print(ply_path)
+        thread1 = ThreadWithReturnValue(target = read_pcd, args = (ply_path, ))
+        thread1.start()
+        print(gt_ply_path)
+        thread2 = ThreadWithReturnValue(target = read_pcd, args = (gt_ply_path, ))
+        thread2.start()
+        pcd = thread1.join()
+        gt_pcd = thread2.join()
 
+    # Refine alignment
     if transform_path != None:
-		# Load and apply existing transform
+		# Load existing transform
         transform = np.load(transform_path)
-        if refine_alignment:
-            # Refine existing transform
-            pcd = refine_alignment(pcd, gt_pcd, dTau, transform)
-        else:
+        if crop_path != None:
+            # cut pcd by the crop volume
+            vol = o3d.visualization.read_selection_polygon_volume(crop_path)
             pcd.transform(transform)
-    elif refine_alignment:
-        # Refine alignment
-        r = registration_unif(pcd, gt_pcd, np.identity(4), None, dTau * 2, 20, sample_method=None)
-        pcd.transform(r.transformation)
+            pcd = crop_volume.crop_point_cloud(pcd)
+            transform = np.linalg.inv(transform)
+            pcd.transform(transform)
+            transform = np.identity(4)
+    else:
+        # Models arealdy aligned
+        transform = np.identity(4)
+    if do_refine_alignment:
+        reg = registration_unif(pcd, gt_pcd, transform, None, dTau * 2, 20, sample_method=None)
+        transform = np.matmul(reg.transformation, transform)
+    pcd.transform(transform)
 
     # Histogramms and P/R/F1
     plot_stretch = 5
@@ -219,7 +252,7 @@ def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir, po
         dTau,
         out_dir,
         plot_stretch,
-        plot_color_coding,
+        do_plot_color_coding,
         scene,
     )
     eva = [precision, recall, fscore]
@@ -248,7 +281,7 @@ def run_evaluation_aligned(dataset_dir, gt_ply_path, ply_path, dTau, out_dir, po
     return eva
 
 
-def run_evaluation_aligned_project(dataset_dir, gt_ply_path, ply_path, dTau, out_dir, transform_path=None, refine_alignment=False, plot_color_coding=True):
+def run_evaluation_aligned_project(dataset_dir, gt_ply_path, ply_path, dTau, out_dir, transform_path=None, do_refine_alignment=False, do_plot_color_coding=True):
     dataset_dir = os.path.normpath(dataset_dir)
     scene = os.path.basename(dataset_dir)
     gt_ply_path = os.path.join(dataset_dir, gt_ply_path)
@@ -262,10 +295,10 @@ def run_evaluation_aligned_project(dataset_dir, gt_ply_path, ply_path, dTau, out
         return
 
     if len(gt_scenes) == 1:
-        return run_evaluation_aligned(dataset_dir, gt_scenes[i], scenes[i], dTau, out_dir, transform_path=transform_path, refine_alignment=refine_alignment, plot_color_coding=plot_color_coding)
+        return run_evaluation_aligned(dataset_dir, gt_scenes[i], scenes[i], dTau, out_dir, transform_path=transform_path, do_refine_alignment=do_refine_alignment, do_plot_color_coding=do_plot_color_coding)
     evas = []
     for i in range(len(gt_scenes)):
-        evas.append(run_evaluation_aligned(dataset_dir, gt_scenes[i], scenes[i], dTau, out_dir, postfix=i, transform_path=transform_path, refine_alignment=refine_alignment, plot_color_coding=plot_color_coding))
+        evas.append(run_evaluation_aligned(dataset_dir, gt_scenes[i], scenes[i], dTau, out_dir, postfix=i, transform_path=transform_path, do_refine_alignment=do_refine_alignment, do_plot_color_coding=do_plot_color_coding))
     nevas = len(evas)
     evas = np.asmatrix(evas)
     eva = np.asarray(evas.sum(axis=0)/nevas)
@@ -348,7 +381,7 @@ if __name__ == "__main__":
             traj_path=args.traj_path,
             ply_path=args.ply_path,
             out_dir=args.out_dir,
-            plot_color_coding=not args.no_plot_color_coding
+            do_plot_color_coding=not args.no_plot_color_coding
         )
     else:
         # run evaluation on already aligned data
@@ -359,6 +392,6 @@ if __name__ == "__main__":
             dTau=args.tau,
             out_dir=args.out_dir,
             transform_path=args.transform_path,
-            refine_alignment=args.refine_alignment,
-            plot_color_coding=not args.no_plot_color_coding
+            do_refine_alignment=args.refine_alignment,
+            do_plot_color_coding=not args.no_plot_color_coding
         )
